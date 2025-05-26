@@ -135,4 +135,4 @@ async def get_content_similar_items(item_id: str):
 handler = Mangum(app, lifespan="off")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("main:app", host="0.0.0.0", port=10000, reload=True)
