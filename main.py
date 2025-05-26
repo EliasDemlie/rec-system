@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from pymongo import MongoClient
 from datetime import datetime, timezone
 from mangum import Mangum
-from bson import ObjectId
+import os
 from contextlib import asynccontextmanager  # Correct import for lifespan
 
 from config import MONGO_URI, MONGO_DB_NAME, PRODUCT_DB_NAME
@@ -135,4 +135,5 @@ async def get_content_similar_items(item_id: str):
 handler = Mangum(app, lifespan="off")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=10000, reload=True)
+    port = int(os.environ.get("PORT", 8000))  # Default to 8000 if not set
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
