@@ -126,7 +126,3 @@ def refresh_recommendations():
 
 
 
-
-
-if __name__ == "__main__":
-    refresh_recommendations()
