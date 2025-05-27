@@ -1,5 +1,6 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
 from datetime import datetime, timezone
@@ -23,6 +24,15 @@ app = FastAPI(
     title="Recommendation API",
     description="API for recording interactions and generating recommendations",
     lifespan=lifespan
+)
+
+# Enable CORS for all origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # MongoDB connection
@@ -95,7 +105,6 @@ async def record_interaction(interaction: Interaction):
 
 @app.get("/user/recommendations/{user_id}")
 async def get_stored_recommendations(user_id: str):
-    
     """Retrieve stored recommendations or generate fallback recommendations for a user."""
     recommendation = RECOMMENDATIONS_COLLECTION.find_one({"user_id": user_id})
     if recommendation:
@@ -130,7 +139,6 @@ async def get_content_similar_items(item_id: str):
             status_code=500,
             detail=f"An error occurred during similarity calculation: {str(e)}"
         )
-
 
 # Mangum handler for Vercel
 handler = Mangum(app, lifespan="off")
