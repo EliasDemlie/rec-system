@@ -1,12 +1,13 @@
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pymongo import MongoClient
 from datetime import datetime, timezone
 from mangum import Mangum
 import os
-from contextlib import asynccontextmanager  # Correct import for lifespan
+from train_model import refresh_recommendations
+from contextlib import asynccontextmanager
 
 from config import MONGO_URI, MONGO_DB_NAME, PRODUCT_DB_NAME
 from recommendation import get_item_details, recommend_items_by_content, recommend_by_last_interacted, vectorize_item
@@ -14,19 +15,17 @@ from recommendation import get_item_details, recommend_items_by_content, recomme
 # Lifespan event handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handle startup and shutdown events."""
     print("Server started...")
     yield
     print("Server shutting down...")
 
-# FastAPI app initialization with lifespan
 app = FastAPI(
     title="Recommendation API",
     description="API for recording interactions and generating recommendations",
     lifespan=lifespan
 )
 
-# Enable CORS for all origins
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,18 +34,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
+# MongoDB setup
 client = MongoClient(MONGO_URI)
 db = client[MONGO_DB_NAME]
 product_db = client[PRODUCT_DB_NAME]
 
-# Collections
 INTERACTIONS_COLLECTION = db["interactions"]
 RECOMMENDATIONS_COLLECTION = db["recommendations"]
 PRODUCT_COLLECTION = product_db["products"]
 VECTOR_COLLECTION = db["item_vectors"]
 
-# Event weights for scoring interactions
+# Interaction weights
 EVENT_WEIGHTS = {
     "click": 0.5,
     "add_to_cart": 0.8,
@@ -54,7 +52,7 @@ EVENT_WEIGHTS = {
     "rating": None
 }
 
-# Pydantic models
+# Models
 class Interaction(BaseModel):
     user_id: str
     item_id: str
@@ -72,7 +70,6 @@ async def read_root():
 
 @app.post("/interactions/record")
 async def record_interaction(interaction: Interaction):
-    """Record a user interaction and update or insert it in the database."""
     score = EVENT_WEIGHTS.get(interaction.event_type, 0.5)
     if interaction.event_type == "rating" and interaction.rating is not None:
         score = round(interaction.rating * 0.2, 1)
@@ -104,8 +101,10 @@ async def record_interaction(interaction: Interaction):
     return {"message": "Interaction recorded"}
 
 @app.get("/user/recommendations/{user_id}")
-async def get_stored_recommendations(user_id: str):
-    """Retrieve stored recommendations or generate fallback recommendations for a user."""
+async def get_stored_recommendations(user_id: str = Path(...)):
+    if not user_id or user_id.lower() == "undefined":
+        raise HTTPException(status_code=400, detail="Invalid or missing user_id")
+
     recommendation = RECOMMENDATIONS_COLLECTION.find_one({"user_id": user_id})
     if recommendation:
         sorted_items = sorted(recommendation["recommended_items"], key=lambda x: -x["score"])
@@ -126,9 +125,11 @@ async def get_stored_recommendations(user_id: str):
         "note": "Generated from top interaction"
     }
 
-@app.get("/items/similar/{item_id}")
-async def get_content_similar_items(item_id: str):
-    """Retrieve content-based similar items for a given item ID."""
+@app.get("/item/similar/{item_id}")
+async def get_content_similar_items(item_id: str = Path(...)):
+    if not item_id or item_id.lower() == "undefined":
+        raise HTTPException(status_code=400, detail="Invalid or missing item_id")
+
     try:
         recommendations = recommend_items_by_content(item_id)
         return {"recommended_items": recommendations}
@@ -140,9 +141,22 @@ async def get_content_similar_items(item_id: str):
             detail=f"An error occurred during similarity calculation: {str(e)}"
         )
 
-# Mangum handler for Vercel
+
+@app.get("/refresh-recommendations")
+async def refresh_recommendations_endpoint():
+    try:
+        refresh_recommendations()
+        return {"message": "Recommendations refreshed successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error refreshing recommendations: {str(e)}")
+
+
+
+
+
+
 handler = Mangum(app, lifespan="off")
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))  # Default to 8000 if not set
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
