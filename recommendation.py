@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import spacy
+from typing import List, Dict, Any  # Ensure Dict is imported here
+
 
 from config import MONGO_URI, MONGO_DB_NAME, PRODUCT_DB_NAME
 
@@ -30,15 +32,101 @@ class Item(BaseModel):
     category: str
 
 
-def get_item_details(item_ids: List[str]) -> List[dict]:
-    """Retrieve item details from product collection for given item IDs."""
-    object_ids = [ObjectId(item_id) for item_id in item_ids]
-    cursor = PRODUCT_COLLECTION.find({"_id": {"$in": object_ids}})
-    items = []
-    for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        items.append(doc)
-    return items
+# def get_item_details(item_ids: List[str]) -> List[dict]:
+#     """Retrieve item details from product collection for given item IDs."""
+#     object_ids = [ObjectId(item_id) for item_id in item_ids]
+#     cursor = PRODUCT_COLLECTION.find({"_id": {"$in": object_ids}})
+#     items = []
+#     for doc in cursor:
+#         doc["_id"] = str(doc["_id"])
+#         items.append(doc)
+#     return items
+
+def get_item_details(item_ids: List[str]) -> List[Dict[str, Any]]:
+    """
+    Retrieve item details from the product collection for given item IDs, including category details.
+    
+    Args:
+        item_ids (List[str]): List of product IDs to fetch.
+        
+    Returns:
+        List[Dict[str, Any]]: A list of product documents with resolved category details.
+    """
+    try:
+        # Convert item_ids to ObjectIds for MongoDB query
+        object_ids = [ObjectId(item_id) for item_id in item_ids]
+
+        # Define the aggregation pipeline
+        pipeline = [
+            {
+                "$match": {
+                    "_id": {"$in": object_ids}  # Filter by the provided item IDs
+                }
+            },
+            {
+                "$lookup": {
+                    "from": "categories",  # The target collection
+                    "localField": "category",  # Field in products collection
+                    "foreignField": "_id",  # Field in categories collection
+                    "as": "category_details"  # Output array field
+                }
+            },
+            {
+                "$unwind": "$category_details"  # Deconstruct the category_details array into a single object
+            },
+            {
+                "$project": {
+                    "_id": {"$toString": "$_id"},  # Convert _id to string
+                    "name": 1,
+                    "description": 1,
+                    "brand": 1,
+                    "images": 1,
+                    "inStock": 1,
+                    "quantity": 1,
+                    "price": 1,
+                    "category": {"$toString": "$category"},  # Convert category ObjectId to string
+                    "category_name": "$category_details.name",
+                    "sub_categories": "$category_details.subCategories",
+                    "icon": "$category_details.icon",
+                    "created_at": {
+                        "$dateToString": {
+                            "format": "%Y-%m-%d %H:%M:%S",
+                            "date": "$category_details.createdAt"
+                        }
+                    },
+                    "updated_at": {
+                        "$dateToString": {
+                            "format": "%Y-%m-%d %H:%M:%S",
+                            "date": "$category_details.updatedAt"
+                        }
+                    }
+                }
+            }
+        ]
+
+        # Execute the aggregation pipeline
+        cursor = PRODUCT_COLLECTION.aggregate(pipeline)
+
+        # Convert results to a list and handle images
+        items = []
+        for doc in cursor:
+            # Convert _id in each image document to string
+            if "images" in doc:
+                for image in doc["images"]:
+                    if "_id" in image and isinstance(image["_id"], ObjectId):
+                        image["_id"] = str(image["_id"])
+                    elif "_id" in image and isinstance(image["_id"], dict) and "$oid" in image["_id"]:
+                        image["_id"] = image["_id"]["$oid"]
+            items.append(doc)
+
+        return items
+
+    except Exception as e:
+        print(f"Error fetching item details: {e}")
+        return []
+
+
+
 
 
 def vectorize_item(text: str) -> List[float]:
@@ -82,6 +170,7 @@ def recommend_items_by_content(item_id: str, top_n: int = 10) -> List[dict]:
 
     top_similar = sorted(similarities, key=lambda x: -x[1])[:top_n]
     item_ids = [str(other_id) for other_id, _ in top_similar]
+    print(f"Top similar items for {item_id}: {item_ids}")
     detailed_items = get_item_details(item_ids)
     id_score_map = {str(other_id): float(score) for other_id, score in top_similar}
 
@@ -107,3 +196,5 @@ def recommend_by_last_interacted(user_id: str) -> List[dict] | None:
     recommended_items_id = recommend_items_by_content(top_item_id)
     recommended_items = get_item_details(recommended_items_id)
     return recommended_items
+
+

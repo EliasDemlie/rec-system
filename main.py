@@ -95,6 +95,7 @@ async def record_interaction(interaction: Interaction):
 
 @app.get("/user/recommendations/{user_id}")
 async def get_stored_recommendations(user_id: str):
+    
     """Retrieve stored recommendations or generate fallback recommendations for a user."""
     recommendation = RECOMMENDATIONS_COLLECTION.find_one({"user_id": user_id})
     if recommendation:

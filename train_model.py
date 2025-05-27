@@ -3,6 +3,7 @@ from surprise import SVD, Dataset, Reader
 from surprise.model_selection import train_test_split
 from surprise import accuracy
 import pandas as pd
+from bson import ObjectId
 from config import MONGO_URI, MONGO_DB_NAME
 
 interactioncollection = "interactions"
@@ -80,60 +81,6 @@ def train_svd_model(interactions_data):
     all_items = set(df['item_id'].unique())
 
     return algo, trainset, testset, all_items
-
-# def generate_recommendations(algo, trainset, user_id, all_items, top_n=10, interactions_data=None):
-
-#     try:
-#         client = MongoClient(MONGO_URI)
-#         db = client[MONGO_DB_NAME]
-#         collection = db[recommendation_collection]
-
-
-       
-#         if user_id in trainset._raw2inner_id_users:
-#     # Get items the user has already interacted with (use raw item IDs)
-#             user_items = set(trainset.to_raw_iid(iid) for (iid, _) in trainset.ur[trainset.to_inner_uid(user_id)])
-
-#             # Predict scores for all items not interacted with
-#             predictions = []
-#             for item_id in all_items:
-#                 if item_id not in user_items:
-#                     pred = algo.predict(user_id, item_id)
-#                     predictions.append((item_id, pred.est))
-
-#             # Sort by predicted score and get top-N
-#             predictions.sort(key=lambda x: x[1], reverse=True)
-#             top_predictions = predictions[:top_n]
-       
-#         else:
-#             # Fallback for unknown users: recommend popular items
-#             print(f"User {user_id} not found in training data. Recommending popular items.")
-#             popular_items = get_popular_items(interactions_data, top_n)
-#             recommended_items = [
-#                 {"item_id": item_id, "score": None}
-#                 for item_id in popular_items
-#             ]
-#             top_predictions = [(item_id, None) for item_id in popular_items]
-
-#         # Store recommendations in MongoDB
-#         recommendation_doc = {
-#             "user_id": user_id,
-#             "recommended_items": recommended_items
-#         }
-        
-#         # Update or insert the document (upsert to avoid duplicates)
-#         collection.update_one(
-#             {"user_id": user_id},
-#             {"$set": recommendation_doc},
-#             upsert=True
-#         )
-        
-#         client.close()
-#         return top_predictions
-
-#     except Exception as e:
-#         print(f"Error storing recommendations in MongoDB: {e}")
-#         return top_predictions
 
 
 
